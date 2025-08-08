@@ -2,6 +2,7 @@ package internals
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
 	"strings"
 	"time"
@@ -24,6 +25,8 @@ func Serve() {
 		panic(err)
 	}
 
+	var id int64 = rand.Int63()
+
 	found := make(chan struct{})
 
 	go func() {
@@ -32,7 +35,7 @@ func Serve() {
 			case <-found:
 				return
 			default:
-				_, err := conn.WriteTo([]byte("lethergo"), broadcastAddr)
+				_, err := conn.WriteTo(fmt.Appendf(nil, "lethergo %d", id), broadcastAddr)
 				if err != nil {
 					fmt.Println("Broadcast error:", err)
 				}
@@ -50,9 +53,9 @@ func Serve() {
 			continue
 		}
 
-		msg := strings.TrimSpace(string(buf[:n]))
+		msg := strings.Split(strings.TrimSpace(string(buf[:n])), " ")
 
-		if msg == "lethergo" {
+		if msg[0] == "lethergo" && msg[1] != fmt.Sprintf("%d", id) {
 			fmt.Printf("found: %s!\n", addr)
 			close(found)
 
