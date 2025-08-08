@@ -1,0 +1,24 @@
+version: '3.9'
+
+services:
+  app1:
+    image: lethergo
+    container_name: app1
+    expose:
+        - 4000
+    networks:
+      - mynetwork
+
+  app2:
+    image: lethergo
+    container_name: app2
+    expose:
+        - 4000
+    depends_on:
+        - app1
+    networks:
+      - mynetwork
+
+networks:
+  mynetwork:
+    driver: bridge

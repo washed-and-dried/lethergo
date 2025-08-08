@@ -8,13 +8,32 @@ import (
 	"time"
 )
 
+func GetLocalIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+
+	localAddress := conn.LocalAddr().(*net.UDPAddr)
+
+	// remove the last octect and insert the 255 for broadcasting
+	fullIP := localAddress.IP.String()
+	idx := strings.LastIndex(fullIP, ".")
+	broadcast := fullIP[:idx+1] + "255"
+
+	return broadcast
+}
+
 const (
-	port        = 4000
-	broadcastIP = "192.168.1.255:4000" // FIXME: hardcoded, need to get the subnet from something like ifconfig
+	port = ":4000"
 )
 
+var broadcastIP = GetLocalIP() + port
+
 func Serve() {
-	conn, err := net.ListenPacket("udp4", fmt.Sprintf(":%d", port))
+	fmt.Println(broadcastIP)
+	conn, err := net.ListenPacket("udp4", port)
 	if err != nil {
 		panic(err)
 	}
@@ -58,9 +77,11 @@ func Serve() {
 		if msg[0] == "lethergo" && msg[1] != fmt.Sprintf("%d", id) {
 			fmt.Printf("found: %s!\n", addr)
 			close(found)
-
+			break
 		} else {
 			fmt.Printf("bs from: %s: %s\n", addr, msg)
 		}
 	}
+
+	fmt.Println("Bye")
 }
