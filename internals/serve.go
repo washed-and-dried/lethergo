@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,11 +26,21 @@ func GetLocalIP() string {
 	return broadcast
 }
 
+type GoMsg struct {
+	state int
+}
+
+const (
+	BROADCASTING = iota
+	FOUND
+)
+
 const (
 	port = ":4000"
 )
 
-var broadcastIP = GetLocalIP() + port
+// var broadcastIP = GetLocalIP() + port
+var broadcastIP = "255.255.255.255" + port
 
 func Serve() {
 	fmt.Println(broadcastIP)
@@ -46,42 +57,68 @@ func Serve() {
 
 	var id int64 = rand.Int63()
 
-	found := make(chan struct{})
+	state := make(chan GoMsg)
 
+	var wg sync.WaitGroup
+
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
+		var chanVal GoMsg
 		for {
 			select {
-			case <-found:
-				return
-			default:
-				_, err := conn.WriteTo(fmt.Appendf(nil, "lethergo %d", id), broadcastAddr)
-				if err != nil {
-					fmt.Println("Broadcast error:", err)
+			case chanVal = <-state:
+				switch chanVal.state {
+				case FOUND:
+					return // FIXME: breaking for now
+				case BROADCASTING:
+					_, err := conn.WriteTo(fmt.Appendf(nil, "lethergo %d", id), broadcastAddr)
+					fmt.Println("broadcasting id: %d", id)
+					if err != nil {
+						fmt.Println("Broadcast error:", err)
+					}
+					time.Sleep(3 * time.Second)
 				}
-				time.Sleep(3 * time.Second)
 			}
 		}
 	}()
 
-	buf := make([]byte, 1024)
-
-	for {
-		n, addr, err := conn.ReadFrom(buf)
-		if err != nil {
-			fmt.Println("Read error:", err)
-			continue
-		}
-
-		msg := strings.Split(strings.TrimSpace(string(buf[:n])), " ")
-
-		if msg[0] == "lethergo" && msg[1] != fmt.Sprintf("%d", id) {
-			fmt.Printf("found: %s!\n", addr)
-			close(found)
-			break
-		} else {
-			fmt.Printf("bs from: %s: %s\n", addr, msg)
-		}
+	state <- GoMsg{
+		state: BROADCASTING,
 	}
 
+	buf := make([]byte, 1024)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			n, addr, err := conn.ReadFrom(buf)
+			if err != nil {
+				fmt.Println("Read error:", err)
+				continue
+			}
+
+			msg := strings.Split(strings.TrimSpace(string(buf[:n])), " ")
+
+			if msg[0] == "lethergo" && msg[1] != fmt.Sprintf("%d", id) {
+				fmt.Printf("found: %s!\n", addr)
+				fmt.Printf("%s\n", msg)
+				// close(state)
+				state <- GoMsg{
+					state: FOUND,
+				}
+				break
+			} else {
+				state <- GoMsg{
+					state: BROADCASTING,
+				}
+			}
+		}
+	}()
+	wg.Wait()
 	fmt.Println("Bye")
+}
+
+func handleConn(addr net.Addr) {
 }
