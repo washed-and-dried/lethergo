@@ -2,6 +2,9 @@ version: '3.9'
 
 services:
   app1:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: lethergo
     container_name: app1
     expose:

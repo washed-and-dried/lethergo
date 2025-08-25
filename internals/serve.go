@@ -27,7 +27,9 @@ func GetLocalIP() string {
 }
 
 type GoMsg struct {
+	addr  net.Addr
 	state int
+	id    int64
 }
 
 const (
@@ -36,11 +38,13 @@ const (
 )
 
 const (
-	port = ":4000"
+	port     = ":4000"
+	TCP_PORT = ":4001"
 )
 
 // var broadcastIP = GetLocalIP() + port
 var broadcastIP = "255.255.255.255" + port
+// var broadcastIP = "172.17.0.255" + port
 
 func Serve() {
 	fmt.Println(broadcastIP)
@@ -64,19 +68,34 @@ func Serve() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		var chanVal GoMsg
-		for chanVal = range state {
-			switch chanVal.state {
-			case FOUND:
-				return // FIXME: breaking for now
-			case BROADCASTING:
+		for {
+			select {
+			case chanVal := <- state:
 				{
-					_, err := conn.WriteTo(fmt.Appendf(nil, "lethergo %d", id), broadcastAddr)
-					fmt.Println("broadcasting id: %d", id)
-					if err != nil {
-						fmt.Println("Broadcast error:", err)
+					switch chanVal.state {
+					case FOUND:
+						{
+							_, err := conn.WriteTo(fmt.Appendf(nil, "shegooner %d", chanVal.id), broadcastAddr)
+							if err != nil {
+								fmt.Println("Broadcast error:", err)
+								return
+							}
+
+							wg.Add(1)
+							go listenTCP(chanVal.addr, &wg)
+						}
+
+					case BROADCASTING:
+						{
+							_, err := conn.WriteTo(fmt.Appendf(nil, "lethergo %d", id), broadcastAddr)
+							fmt.Printf("broadcasting id: %d\n", id)
+							if err != nil {
+								fmt.Println("Broadcast error:", err)
+								return
+							}
+							time.Sleep(3 * time.Second)
+						}
 					}
-					time.Sleep(3 * time.Second)
 				}
 			}
 		}
@@ -87,6 +106,7 @@ func Serve() {
 	}
 
 	buf := make([]byte, 1024)
+	found := false
 
 	wg.Add(1)
 	go func() {
@@ -104,11 +124,19 @@ func Serve() {
 				fmt.Printf("found: %s!\n", addr)
 				fmt.Printf("%s\n", msg)
 				// close(state)
+
 				state <- GoMsg{
 					state: FOUND,
+					id:    id,
+					addr:  addr,
 				}
-				break
-			} else {
+				found = true
+			} else if msg[1] == fmt.Sprintf("%d", id) && msg[0] == "shegooner" {
+				fmt.Printf("shegooner found: %s\n", addr.String())
+				wg.Add(1)
+				go sendTCP(addr, &wg)
+				return
+			} else if !found {
 				state <- GoMsg{
 					state: BROADCASTING,
 				}
@@ -119,5 +147,54 @@ func Serve() {
 	fmt.Println("Bye")
 }
 
-func handleConn(addr net.Addr) {
+func listenTCP(addr net.Addr, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	listenAddr, err := net.ResolveTCPAddr("tcp", GetLocalIP()+TCP_PORT)
+
+	connListener, err := net.ListenTCP("tcp", listenAddr)
+	if err != nil {
+		panic(err)
+	}
+
+	defer connListener.Close()
+
+	fmt.Printf("Listening to connections on port %s", TCP_PORT)
+
+	for {
+		conn, err := connListener.Accept()
+		if err != nil {
+			fmt.Printf("Could not accept the connection to the server: %s\n", err)
+			return
+		}
+
+		fmt.Printf("Successfully connected to client: %s\n", conn.RemoteAddr().String())
+
+		wg.Add(1)
+		go handleConn(conn, wg)
+	}
+}
+
+func sendTCP(addr net.Addr, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	if !ok {
+		fmt.Println("Could not cast %T to TCPAddr\n", addr)
+		return
+	}
+
+	conn, err := net.DialTCP("tcp", nil, tcpAddr)
+	if err != nil {
+		fmt.Printf("Dial failed: %s\n", err)
+	}
+
+	handleConn(conn, wg)
+}
+
+func handleConn(conn net.Conn, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	// FIXME: handleConn
+	panic("handleConn")
 }
