@@ -65,13 +65,12 @@ func Serve() {
 	go func() {
 		defer wg.Done()
 		var chanVal GoMsg
-		for {
-			select {
-			case chanVal = <-state:
-				switch chanVal.state {
-				case FOUND:
-					return // FIXME: breaking for now
-				case BROADCASTING:
+		for chanVal = range state {
+			switch chanVal.state {
+			case FOUND:
+				return // FIXME: breaking for now
+			case BROADCASTING:
+				{
 					_, err := conn.WriteTo(fmt.Appendf(nil, "lethergo %d", id), broadcastAddr)
 					fmt.Println("broadcasting id: %d", id)
 					if err != nil {
